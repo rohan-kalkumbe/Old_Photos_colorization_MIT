@@ -2,12 +2,18 @@ from flask import Flask, render_template, request, jsonify
 import cv2
 import numpy as np
 import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+# Configuration
 UPLOAD_FOLDER = "static/uploads"
 RESULT_FOLDER = "static/results"
 MODELS_FOLDER = "models"
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB max file size
+
+# Ensure necessary folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
@@ -52,7 +58,7 @@ def upload():
     if file.filename == '':
         return "No file selected", 400
 
-    filename = file.filename
+    filename = secure_filename(file.filename)
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
@@ -60,17 +66,14 @@ def upload():
     if image is None:
         return "Uploaded file is not a valid image", 400
 
-    # Load model only when needed
     net = load_model()
 
-    # Preprocessing
     original_size = (image.shape[1], image.shape[0])
     lab = cv2.cvtColor(image.astype("float32") / 255.0, cv2.COLOR_BGR2LAB)
     L_original = lab[:, :, 0]
     L_input = cv2.resize(L_original, (224, 224))
     L_input -= 50  # center around mean
 
-    # Colorization
     net.setInput(cv2.dnn.blobFromImage(L_input))
     ab_base = net.forward()[0].transpose((1, 2, 0))
     ab_base = cv2.resize(ab_base, original_size)
