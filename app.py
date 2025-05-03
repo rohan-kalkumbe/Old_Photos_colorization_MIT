@@ -12,21 +12,28 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 # Paths to model files
-PROTOTXT_PATH = os.path.join(MODELS_FOLDER, "colorize.prototext")  # ✅ fixed typo from .prototext
+PROTOTXT_PATH = os.path.join(MODELS_FOLDER, "colorize.prototext")
 MODEL_PATH = os.path.join(MODELS_FOLDER, "release.caffemodel")
 POINTS_PATH = os.path.join(MODELS_FOLDER, "pts_in_hull.npy")
 
-# Load model
-net = cv2.dnn.readNetFromCaffe(PROTOTXT_PATH, MODEL_PATH)
-pts = np.load(POINTS_PATH)
-pts = pts.transpose().reshape(2, 313, 1, 1)
+# Global cache for model
+colorization_net = None
 
-# Assign cluster centers and prior
-class8_id = net.getLayerId("class8_ab")
-conv8_id = net.getLayerId("conv8_313_rh")
+def load_model():
+    global colorization_net
+    if colorization_net is None:
+        net = cv2.dnn.readNetFromCaffe(PROTOTXT_PATH, MODEL_PATH)
+        pts = np.load(POINTS_PATH)
+        pts = pts.transpose().reshape(2, 313, 1, 1)
 
-net.getLayer(class8_id).blobs = [pts.astype("float32")]
-net.getLayer(conv8_id).blobs = [np.full([1, 313], 2.606, dtype="float32")]
+        class8_id = net.getLayerId("class8_ab")
+        conv8_id = net.getLayerId("conv8_313_rh")
+
+        net.getLayer(class8_id).blobs = [pts.astype("float32")]
+        net.getLayer(conv8_id).blobs = [np.full([1, 313], 2.606, dtype="float32")]
+
+        colorization_net = net
+    return colorization_net
 
 @app.route('/')
 def index():
@@ -52,6 +59,9 @@ def upload():
     image = cv2.imread(filepath)
     if image is None:
         return "Uploaded file is not a valid image", 400
+
+    # Load model only when needed
+    net = load_model()
 
     # Preprocessing
     original_size = (image.shape[1], image.shape[0])
